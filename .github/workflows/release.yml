@@ -1,0 +1,191 @@
+name: Build & Release PIXELDROP
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Get Dependencies
+        working-directory: apps/android
+        run: flutter pub get
+
+      - name: Build APK (Release)
+        working-directory: apps/android
+        run: flutter build apk --release --split-per-abi=false
+
+      - name: Prepare APK Artifact
+        run: |
+          mkdir -p dist
+          cp apps/android/build/app/outputs/flutter-apk/app-release.apk dist/PIXELDROP.apk
+          cd dist && sha256sum PIXELDROP.apk > PIXELDROP.apk.sha256
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: dist/*
+
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: apps/windows/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Windows App Dependencies
+        working-directory: apps/windows
+        run: npm ci
+
+      - name: Build Tauri EXE
+        working-directory: apps/windows
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build
+
+      - name: Prepare Windows Artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp apps/windows/src-tauri/target/release/bundle/nsis/*-setup.exe dist/PIXELDROP-Setup.exe || cp apps/windows/src-tauri/target/release/*.exe dist/PIXELDROP.exe
+          cd dist && sha256sum * > windows-checksums.txt
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: dist/*
+
+  publish-release:
+    name: Publish Release & Manifest
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Assemble Manifest (latest.json)
+        id: manifest
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="${{ github.event.inputs.version || '1.0.0' }}"
+          fi
+
+          mkdir -p out
+          cp release-assets/android-release/PIXELDROP.apk out/
+          cp release-assets/windows-release/PIXELDROP-Setup.exe out/ 2>/dev/null || cp release-assets/windows-release/*.exe out/PIXELDROP-Setup.exe 2>/dev/null || true
+
+          APK_SHA=$(sha256sum out/PIXELDROP.apk | awk '{print $1}')
+          APK_SIZE=$(stat -c%s out/PIXELDROP.apk 2>/dev/null || stat -f%z out/PIXELDROP.apk)
+
+          EXE_SHA="pending"
+          EXE_SIZE=0
+          if [ -f "out/PIXELDROP-Setup.exe" ]; then
+            EXE_SHA=$(sha256sum out/PIXELDROP-Setup.exe | awk '{print $1}')
+            EXE_SIZE=$(stat -c%s out/PIXELDROP-Setup.exe 2>/dev/null || stat -f%z out/PIXELDROP-Setup.exe)
+          fi
+
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          cat <<EOF > out/latest.json
+          {
+            "version": "$VERSION",
+            "release_date": "$PUB_DATE",
+            "release_notes": "PIXELDROP $VERSION release with in-app update support, pixel-art UI, and secure transfers.",
+            "mandatory": false,
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "",
+                "url": "https://github.com/${{ github.repository }}/releases/download/v$VERSION/PIXELDROP-Setup.exe",
+                "sha256": "$EXE_SHA",
+                "size": $EXE_SIZE
+              },
+              "android-arm64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/v$VERSION/PIXELDROP.apk",
+                "sha256": "$APK_SHA",
+                "size": $APK_SIZE,
+                "package_name": "com.pixeldrop.app"
+              },
+              "android-universal": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/v$VERSION/PIXELDROP.apk",
+                "sha256": "$APK_SHA",
+                "size": $APK_SIZE,
+                "package_name": "com.pixeldrop.app"
+              }
+            }
+          }
+          EOF
+
+          echo "Generated latest.json:"
+          cat out/latest.json
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/PIXELDROP.apk
+            out/PIXELDROP-Setup.exe
+            out/latest.json
+          tag_name: ${{ github.ref_name }}
+          name: PIXELDROP Release ${{ github.ref_name }}
+          body: |
+            ## 🚀 PIXELDROP ${{ github.ref_name }}
+            
+            ### ✨ Highlights & Updates:
+            - **In-App Auto Update**: Installed Android and Windows apps will auto-detect this release and update directly inside the app.
+            - **Pixel-Art Dark UI**: Orange accent `#FF6338` & `#080808` background.
+            - **QR Pairing**: 5-minute expiring secure verification codes.
+            - **Transfer Engine**: Fast local and cloud file transfers.
+            
+            ### 📦 Direct Downloads:
+            - **Android APK**: `PIXELDROP.apk`
+            - **Windows Installer**: `PIXELDROP-Setup.exe`
+            - **Update Manifest**: `latest.json`
+          draft: false
+          prerelease: false

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/tooling/cli/schema.json",
+  "productName": "PIXELDROP",
+  "version": "1.0.0",
+  "identifier": "com.pixeldrop.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "PIXELDROP",
+        "width": 1100,
+        "height": 780,
+        "minWidth": 900,
+        "minHeight": 650,
+        "decorations": true,
+        "transparent": false,
+        "backgroundColor": "#080808"
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/32x32.png",
+      "tooltip": "PIXELDROP - Ready to transfer"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/MEYYYNASH/TRANSFERAPP/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dGVzdC1wdWJsaWMta2V5"
+    }
+  }
+}
