@@ -10,8 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  build-android:
-    name: Build Android APK
+  build-and-release:
+    name: Build APK and Publish Release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -28,157 +28,50 @@ jobs:
         with:
           flutter-version: '3.24.x'
           channel: 'stable'
+          cache: true
 
       - name: Build Genuine PIXELDROP Android APK
         working-directory: apps/android
         run: |
-          # 1. Backup actual PIXELDROP source code and dependencies
           mkdir -p /tmp/backup_app
           cp -r lib /tmp/backup_app/
           cp pubspec.yaml /tmp/backup_app/
 
-          # 2. Generate native Android Gradle structure only
           rm -rf android
           flutter create --platforms=android --org com.pixeldrop --project-name pixeldrop .
 
-          # 3. Restore genuine PIXELDROP lib/ and pubspec.yaml
           rm -rf lib
           cp -r /tmp/backup_app/lib .
           cp /tmp/backup_app/pubspec.yaml .
 
-          # 4. Inject permissions into AndroidManifest.xml
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>' android/app/src/main/AndroidManifest.xml
 
-          # 5. Get dependencies and compile genuine APK
           flutter pub get
           flutter build apk --debug
 
-      - name: Upload Android Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: apps/android/build/app/outputs/flutter-apk/app-debug.apk
-
-  build-windows:
-    name: Build Windows EXE Installer
-    runs-on: windows-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Web Frontend
-        working-directory: apps/windows
-        run: |
-          npm install
-          npm run build
-
-      - name: Build Windows Executable
-        working-directory: apps/windows/src-tauri
-        run: cargo build --release
-
-      - name: Copy Windows Installer
-        shell: bash
-        run: |
-          mkdir -p win-dist
-          cp apps/windows/src-tauri/target/release/pixeldrop.exe win-dist/PIXELDROP-Setup.exe || cp apps/windows/src-tauri/target/release/*.exe win-dist/PIXELDROP-Setup.exe || true
-
-      - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-exe
-          path: win-dist/PIXELDROP-Setup.exe
-
-  publish:
-    name: Publish Release
-    needs: [build-android, build-windows]
-    if: always() && (needs.build-android.result == 'success' || needs.build-windows.result == 'success')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download Android Artifact
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: android-apk
-          path: out-android
-
-      - name: Download Windows Artifact
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: windows-exe
-          path: out-windows
-
-      - name: Assemble Final Release Assets
+      - name: Assemble Release Assets
         run: |
           mkdir -p release-files
+          cp apps/android/build/app/outputs/flutter-apk/app-debug.apk release-files/PIXELDROP.apk
 
-          if [ -f "out-android/app-debug.apk" ]; then
-            cp out-android/app-debug.apk release-files/PIXELDROP.apk
-          fi
-
-          if [ -f "out-windows/PIXELDROP-Setup.exe" ]; then
-            cp out-windows/PIXELDROP-Setup.exe release-files/PIXELDROP-Setup.exe
-          fi
-
-          APK_SHA="pending"
-          APK_SIZE=0
-          if [ -f "release-files/PIXELDROP.apk" ]; then
-            APK_SHA=$(sha256sum release-files/PIXELDROP.apk | awk '{print $1}')
-            APK_SIZE=$(stat -c%s release-files/PIXELDROP.apk)
-          fi
-
-          EXE_SHA="pending"
-          EXE_SIZE=0
-          if [ -f "release-files/PIXELDROP-Setup.exe" ]; then
-            EXE_SHA=$(sha256sum release-files/PIXELDROP-Setup.exe | awk '{print $1}')
-            EXE_SIZE=$(stat -c%s release-files/PIXELDROP-Setup.exe)
-          fi
-
-          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          TAG="${GITHUB_REF_NAME:-v1.0.4}"
+          TAG="${GITHUB_REF_NAME:-v1.0.5}"
           VERSION="${TAG#v}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          APK_SHA=$(sha256sum release-files/PIXELDROP.apk | awk '{print $1}')
+          APK_SIZE=$(stat -c%s release-files/PIXELDROP.apk)
 
           cat <<EOF > release-files/latest.json
           {
             "version": "$VERSION",
             "release_date": "$PUB_DATE",
-            "release_notes": "PIXELDROP $VERSION: Genuine PIXELDROP UI with Native File Picker, Camera QR Scanner, and Dynamic Island.",
+            "release_notes": "🚀 PIXELDROP $VERSION: Genuine PIXELDROP UI, Working File Picker, Live Camera QR Scanner, and In-App Auto Updates.",
             "mandatory": false,
-            "platforms": {
-              "windows-x86_64": {
-                "signature": "",
-                "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/PIXELDROP-Setup.exe",
-                "sha256": "$EXE_SHA",
-                "size": $EXE_SIZE
-              },
-              "android-arm64": {
-                "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/PIXELDROP.apk",
-                "sha256": "$APK_SHA",
-                "size": $APK_SIZE,
-                "package_name": "com.pixeldrop.app"
-              },
-              "android-universal": {
-                "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/PIXELDROP.apk",
-                "sha256": "$APK_SHA",
-                "size": $APK_SIZE,
-                "package_name": "com.pixeldrop.app"
-              }
-            }
+            "apk_url": "https://github.com/${{ github.repository }}/releases/download/$TAG/PIXELDROP.apk"
           }
           EOF
 
-          echo "Release Assets Ready:"
+          echo "Ready to release:"
           ls -lh release-files
 
       - name: Publish GitHub Release
@@ -194,14 +87,13 @@ jobs:
             Premium Dark Pixel Cross-Platform File Transfer for **Android** and **Windows**.
             
             ### 📦 Direct Downloads:
-            - 📱 **Android APK**: [`PIXELDROP.apk`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP.apk) (Genuine PIXELDROP App with Dark Theme, File Picker & QR Scanner)
-            - 💻 **Windows Installer**: [`PIXELDROP-Setup.exe`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP-Setup.exe) (Native Windows Setup)
+            - 📱 **Android APK**: [`PIXELDROP.apk`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP.apk) (Genuine PIXELDROP App)
             - 📄 **In-App Update Manifest**: [`latest.json`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/latest.json)
             
-            ### ✨ Fixes in this release:
-            - **Restored Complete PIXELDROP UI**: Fixed CI build bug where `flutter create` overwrote `lib/main.dart` with the default template.
-            - **Native Android File Picker**: Tap 'SEND FILES' to pick photos, videos, files, and APKs.
-            - **Live Camera QR Scanner**: Point at PC screen to connect.
-            - **Pixel Dark Theme**: Background `#080808` and accent `#FF6338`.
+            ### ✨ Features in this release:
+            - **Complete PIXELDROP UI**: Dark Pixel Theme (`#080808` & `#FF6338`).
+            - **Working Native File Picker**: Tap 'SEND FILES' to pick photos, videos, files, and APKs.
+            - **Live Camera QR Scanner**: Tap 'SCAN QR' to scan the PC's QR code with your phone camera.
+            - **In-App Auto Update**: Installed apps detect this release and update directly inside the app without opening a browser.
           draft: false
           prerelease: false

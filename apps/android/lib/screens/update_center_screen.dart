@@ -82,10 +82,10 @@ class _UpdateCenterScreenState extends State<UpdateCenterScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   Column(
-                    children: const [
-                      Text('INSTALLED', style: TextStyle(color: PixelColors.textMuted, fontSize: 11)),
-                      SizedBox(height: 4),
-                      Text('v1.0.0', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    children: [
+                      const Text('INSTALLED', style: TextStyle(color: PixelColors.textMuted, fontSize: 11)),
+                      const SizedBox(height: 4),
+                      Text('v${InAppUpdaterService.currentVersion}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   Container(height: 35, width: 1, color: PixelColors.border),
@@ -94,7 +94,7 @@ class _UpdateCenterScreenState extends State<UpdateCenterScreen> {
                       const Text('GITHUB LATEST', style: TextStyle(color: PixelColors.textMuted, fontSize: 11)),
                       const SizedBox(height: 4),
                       Text(
-                        _releaseInfo != null ? 'v${_releaseInfo!.version}' : 'v1.0.0',
+                        _releaseInfo != null ? 'v${_releaseInfo!.version}' : 'v${InAppUpdaterService.currentVersion}',
                         style: const TextStyle(color: PixelColors.primary, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ],
