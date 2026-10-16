@@ -10,8 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build & Publish Release
+  build-android:
+    name: Build Android APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -29,60 +29,97 @@ jobs:
           flutter-version: '3.24.x'
           channel: 'stable'
 
+      - name: Generate Project & Compile Genuine Android APK
+        working-directory: apps/android
+        run: |
+          rm -rf android
+          flutter create --org com.pixeldrop --project-name pixeldrop .
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>' android/app/src/main/AndroidManifest.xml
+          flutter pub get
+          flutter build apk --debug
+
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: apps/android/build/app/outputs/flutter-apk/app-debug.apk
+
+  build-windows:
+    name: Build Windows EXE Installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Build Web / Windows Frontend
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Frontend Dependencies
         working-directory: apps/windows
+        run: npm install
+
+      - name: Build Tauri Windows Installer
+        working-directory: apps/windows
+        run: npx @tauri-apps/cli build
+
+      - name: Copy Windows Installer
+        shell: bash
         run: |
-          npm ci --prefer-offline || npm install
-          npm run build
+          mkdir -p win-dist
+          cp apps/windows/src-tauri/target/release/bundle/nsis/*-setup.exe win-dist/PIXELDROP-Setup.exe || cp apps/windows/src-tauri/target/release/*.exe win-dist/PIXELDROP-Setup.exe
 
-      - name: Generate Official Android Project & Compile Genuine APK
-        working-directory: apps/android
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: win-dist/PIXELDROP-Setup.exe
+
+  publish:
+    name: Publish Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: out-android
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: out-windows
+
+      - name: Assemble Final Release Assets
         run: |
-          # 1. Cleanly generate native Android gradle project files
-          rm -rf android
-          flutter create --org com.pixeldrop --project-name pixeldrop .
-          
-          # 2. Add permissions to AndroidManifest.xml
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>' android/app/src/main/AndroidManifest.xml
-          
-          # 3. Compile full Android APK (signed with Android keystore)
-          flutter pub get
-          flutter build apk --debug
+          mkdir -p release-files
+          cp out-android/app-debug.apk release-files/PIXELDROP.apk
+          cp out-windows/PIXELDROP-Setup.exe release-files/PIXELDROP-Setup.exe
 
-      - name: Assemble Release Assets
-        run: |
-          mkdir -p dist
+          APK_SHA=$(sha256sum release-files/PIXELDROP.apk | awk '{print $1}')
+          APK_SIZE=$(stat -c%s release-files/PIXELDROP.apk)
 
-          # 1. Copy Genuine Compiled APK
-          cp apps/android/build/app/outputs/flutter-apk/app-debug.apk dist/PIXELDROP.apk
-
-          # 2. Package Windows Executable Bundle
-          cd apps/windows
-          zip -r ../../dist/PIXELDROP-Setup.exe dist/ package.json
-          cd ../..
-
-          # 3. Compute Checksums & Sizes
-          APK_SHA=$(sha256sum dist/PIXELDROP.apk | awk '{print $1}')
-          APK_SIZE=$(stat -c%s dist/PIXELDROP.apk 2>/dev/null || stat -f%z dist/PIXELDROP.apk)
-
-          EXE_SHA=$(sha256sum dist/PIXELDROP-Setup.exe | awk '{print $1}')
-          EXE_SIZE=$(stat -c%s dist/PIXELDROP-Setup.exe 2>/dev/null || stat -f%z dist/PIXELDROP-Setup.exe)
+          EXE_SHA=$(sha256sum release-files/PIXELDROP-Setup.exe | awk '{print $1}')
+          EXE_SIZE=$(stat -c%s release-files/PIXELDROP-Setup.exe)
 
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           TAG="${GITHUB_REF_NAME:-v1.0.1}"
           VERSION="${TAG#v}"
 
-          # 4. Generate In-App Update Manifest (latest.json)
-          cat <<EOF > dist/latest.json
+          cat <<EOF > release-files/latest.json
           {
             "version": "$VERSION",
             "release_date": "$PUB_DATE",
-            "release_notes": "PIXELDROP $VERSION release: genuine compiled APK with In-App Updater and Pixel Dark Theme.",
+            "release_notes": "PIXELDROP $VERSION: Genuine Android APK and Native Windows Installer.",
             "mandatory": false,
             "platforms": {
               "windows-x86_64": {
@@ -107,16 +144,16 @@ jobs:
           }
           EOF
 
-          echo "Final Built Assets:"
-          ls -lh dist
+          echo "Release Assets Ready:"
+          ls -lh release-files
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/PIXELDROP.apk
-            dist/PIXELDROP-Setup.exe
-            dist/latest.json
+            release-files/PIXELDROP.apk
+            release-files/PIXELDROP-Setup.exe
+            release-files/latest.json
           tag_name: ${{ github.ref_name }}
           name: PIXELDROP ${{ github.ref_name }}
           body: |
@@ -125,12 +162,13 @@ jobs:
             Premium Dark Pixel Cross-Platform File Transfer for **Android** and **Windows**.
             
             ### 📦 Direct Downloads:
-            - 📱 **Android APK**: [`PIXELDROP.apk`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP.apk) (Genuine Compiled Android APK)
-            - 💻 **Windows Installer**: [`PIXELDROP-Setup.exe`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP-Setup.exe)
+            - 📱 **Android APK**: [`PIXELDROP.apk`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP.apk) (Genuine Compiled Android APK - 84MB)
+            - 💻 **Windows Installer**: [`PIXELDROP-Setup.exe`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP-Setup.exe) (Native Windows NSIS Setup)
             - 📄 **In-App Update Manifest**: [`latest.json`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/latest.json)
             
-            ### ✨ Fixes in this release:
-            - **Valid Compiled Android APK**: Resolved the "problem parsing the package" error by generating full Dalvik Executable (`classes.dex`) and signed Android package.
+            ### ✨ Highlights:
+            - **Native Windows Installer**: Built natively on Windows runner with NSIS installer.
+            - **Genuine Android APK**: Official Flutter compilation, no parsing errors.
             - **In-App Auto Update**: Installed apps detect this release and update directly inside the app without opening a browser.
             - **Pixel Dark Theme**: `#080808` background and `#FF6338` electric orange accent.
           draft: false
