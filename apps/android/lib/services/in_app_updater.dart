@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -21,57 +22,71 @@ class GitHubReleaseInfo {
 }
 
 class InAppUpdaterService {
-  static const String repoOwner = 'MEYYYNASH';
-  static const String repoName = 'TRANSFERAPP';
-  static const String currentVersion = '1.0.1';
+  static const String currentVersion = '1.0.2';
 
-  final Dio _dio = Dio();
+  // Fast direct CDN endpoints without GitHub API 60 req/hr rate limits!
+  static const String cdnManifestUrl =
+      'https://raw.githubusercontent.com/MEYYYNASH/TRANSFERAPP/main/latest.json';
+  static const String releaseManifestUrl =
+      'https://github.com/MEYYYNASH/TRANSFERAPP/releases/latest/download/latest.json';
 
-  /// 1. Check GitHub API for the latest published release
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 15),
+    ),
+  );
+
+  /// Check for new version using rate-limit-free Raw CDN manifest
   Future<GitHubReleaseInfo?> checkForUpdate() async {
+    // 1. Try raw CDN manifest first (zero rate limits, instant updates upon normal git push!)
     try {
-      final response = await _dio.get(
-        'https://api.github.com/repos/$repoOwner/$repoName/releases/latest',
-        options: Options(
-          headers: {'Accept': 'application/vnd.github.v3+json'},
-        ),
-      );
-
+      final response = await _dio.get(cdnManifestUrl);
       if (response.statusCode == 200) {
-        final data = response.data;
-        final tagName = data['tag_name'] as String? ?? 'v1.0.1';
-        final latestVersion = tagName.replaceAll(RegExp(r'^v'), '');
-
+        final data = response.data is Map ? response.data : jsonDecode(response.data);
+        final latestVersion = (data['version'] as String? ?? '1.0.2').replaceAll('v', '');
         final isNewer = _isVersionHigher(latestVersion, currentVersion);
-
-        String apkUrl = '';
-        int apkSize = 0;
-
-        final assets = data['assets'] as List<dynamic>? ?? [];
-        for (final asset in assets) {
-          final name = (asset['name'] as String).toLowerCase();
-          if (name.endsWith('.apk')) {
-            apkUrl = asset['browser_download_url'] as String;
-            apkSize = asset['size'] as int? ?? 0;
-            break;
-          }
-        }
+        final apkUrl = (data['apk_url'] as String? ??
+            'https://github.com/MEYYYNASH/TRANSFERAPP/releases/download/v$latestVersion/PIXELDROP.apk');
 
         return GitHubReleaseInfo(
           version: latestVersion,
-          releaseNotes: data['body'] as String? ?? 'New version available.',
+          releaseNotes: data['release_notes'] as String? ?? 'New version available.',
           apkDownloadUrl: apkUrl,
-          apkSize: apkSize,
+          apkSize: 97 * 1024 * 1024,
           isNewer: isNewer,
         );
       }
     } catch (e) {
-      debugPrint('Error checking GitHub updates: $e');
+      debugPrint('CDN check failed: $e. Trying fallback...');
     }
+
+    // 2. Try release asset manifest fallback
+    try {
+      final response = await _dio.get(releaseManifestUrl);
+      if (response.statusCode == 200) {
+        final data = response.data is Map ? response.data : jsonDecode(response.data);
+        final latestVersion = (data['version'] as String? ?? '1.0.2').replaceAll('v', '');
+        final isNewer = _isVersionHigher(latestVersion, currentVersion);
+        final apkUrl = (data['apk_url'] as String? ??
+            'https://github.com/MEYYYNASH/TRANSFERAPP/releases/download/v$latestVersion/PIXELDROP.apk');
+
+        return GitHubReleaseInfo(
+          version: latestVersion,
+          releaseNotes: data['release_notes'] as String? ?? 'New version available.',
+          apkDownloadUrl: apkUrl,
+          apkSize: 97 * 1024 * 1024,
+          isNewer: isNewer,
+        );
+      }
+    } catch (e) {
+      debugPrint('Release manifest check failed: $e');
+    }
+
     return null;
   }
 
-  /// 2. Download APK directly in-app and trigger installation intent
+  /// Download APK directly in-app and trigger Android package installer
   Future<bool> downloadAndInstallApk(
     String apkUrl,
     void Function(int received, int total) onProgress,
@@ -85,14 +100,14 @@ class InAppUpdaterService {
         await file.delete();
       }
 
-      // In-app stream download with progress
+      // Download APK stream directly with progress
       await _dio.download(
         apkUrl,
         savePath,
         onReceiveProgress: onProgress,
       );
 
-      // Trigger Android system package installer intent directly
+      // Trigger Android system package installer intent
       final result = await OpenFilex.open(
         savePath,
         type: 'application/vnd.android.package-archive',

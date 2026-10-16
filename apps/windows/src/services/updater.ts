@@ -1,6 +1,6 @@
 /**
  * In-App Auto Updater Service for PIXELDROP Windows
- * Queries GitHub Releases directly without opening external browser.
+ * Queries rate-limit-free raw CDN manifest directly without hitting GitHub API limits!
  */
 
 export interface UpdateInfo {
@@ -13,89 +13,54 @@ export interface UpdateInfo {
   fileSize?: number;
 }
 
-export type UpdateProgressCallback = (progress: number, total: number) => void;
-
 class InAppUpdaterService {
-  private repoOwner = "MEYYYNASH";
-  private repoName = "TRANSFERAPP";
   private currentVersion = "1.0.2";
+  private cdnManifestUrl =
+    "https://raw.githubusercontent.com/MEYYYNASH/TRANSFERAPP/main/latest.json";
+  private releaseManifestUrl =
+    "https://github.com/MEYYYNASH/TRANSFERAPP/releases/latest/download/latest.json";
 
   public getCurrentVersion(): string {
     return this.currentVersion;
   }
 
   /**
-   * Check GitHub Releases API for new version
+   * Check for updates using rate-limit-free CDN manifest
    */
   public async checkForUpdates(): Promise<UpdateInfo> {
-    try {
-      const response = await fetch(
-        `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/releases/latest`,
-        {
-          headers: {
-            Accept: "application/vnd.github.v3+json",
-          },
-        }
-      );
+    const urls = [this.cdnManifestUrl, this.releaseManifestUrl];
 
-      if (!response.ok) {
-        if (response.status === 404) {
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, { cache: "no-cache" });
+        if (response.ok) {
+          const data = await response.json();
+          const latestVersion = (data.version || "1.0.2").replace(/^v/, "");
+          const isNewer = this.compareVersions(latestVersion, this.currentVersion) > 0;
+
           return {
-            available: false,
+            available: isNewer,
             currentVersion: this.currentVersion,
-            latestVersion: this.currentVersion,
-            releaseNotes: "No releases found yet on GitHub.",
-            publishedAt: new Date().toISOString(),
+            latestVersion,
+            releaseNotes: data.release_notes || "Performance improvements and bug fixes.",
+            publishedAt: data.release_date || new Date().toISOString(),
+            downloadUrl: data.windows_url,
           };
         }
-        throw new Error(`GitHub API error: ${response.statusText}`);
+      } catch (err: any) {
+        console.warn(`Manifest check from ${url} failed:`, err.message);
       }
-
-      const data = await response.json();
-      const tagName = data.tag_name || "v1.0.0";
-      const cleanLatest = tagName.replace(/^v/, "");
-
-      const isNewer = this.compareVersions(cleanLatest, this.currentVersion) > 0;
-
-      // Find Windows EXE asset
-      let downloadUrl = "";
-      let fileSize = 0;
-      if (Array.isArray(data.assets)) {
-        const winAsset = data.assets.find(
-          (a: any) =>
-            a.name.endsWith(".exe") || a.name.includes("Setup") || a.name.includes("windows")
-        );
-        if (winAsset) {
-          downloadUrl = winAsset.browser_download_url;
-          fileSize = winAsset.size;
-        }
-      }
-
-      return {
-        available: isNewer,
-        currentVersion: this.currentVersion,
-        latestVersion: cleanLatest,
-        releaseNotes: data.body || "Performance improvements and bug fixes.",
-        publishedAt: data.published_at || new Date().toISOString(),
-        downloadUrl,
-        fileSize,
-      };
-    } catch (err: any) {
-      console.warn("Failed to check GitHub releases:", err.message);
-      // Fallback
-      return {
-        available: false,
-        currentVersion: this.currentVersion,
-        latestVersion: this.currentVersion,
-        releaseNotes: "Could not connect to GitHub.",
-        publishedAt: new Date().toISOString(),
-      };
     }
+
+    return {
+      available: false,
+      currentVersion: this.currentVersion,
+      latestVersion: this.currentVersion,
+      releaseNotes: "Up to date.",
+      publishedAt: new Date().toISOString(),
+    };
   }
 
-  /**
-   * Trigger in-app native notification when update is available
-   */
   public async notifyUpdateAvailable(info: UpdateInfo) {
     try {
       const { isPermissionGranted, requestPermission, sendNotification } =
@@ -114,7 +79,6 @@ class InAppUpdaterService {
         });
       }
     } catch {
-      // In web browser preview or development mode
       if ("Notification" in window && Notification.permission === "granted") {
         new Notification("🚀 PIXELDROP Update Available!", {
           body: `A new version (v${info.latestVersion}) is ready to install inside the app.`,
@@ -123,9 +87,6 @@ class InAppUpdaterService {
     }
   }
 
-  /**
-   * SemVer comparator: returns > 0 if v1 > v2, < 0 if v1 < v2, 0 if equal
-   */
   public compareVersions(v1: string, v2: string): number {
     const p1 = v1.split(".").map(Number);
     const p2 = v2.split(".").map(Number);
