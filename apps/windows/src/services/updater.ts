@@ -18,7 +18,7 @@ export type UpdateProgressCallback = (progress: number, total: number) => void;
 class InAppUpdaterService {
   private repoOwner = "MEYYYNASH";
   private repoName = "TRANSFERAPP";
-  private currentVersion = "1.0.0";
+  private currentVersion = "1.0.2";
 
   public getCurrentVersion(): string {
     return this.currentVersion;

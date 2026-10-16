@@ -25,6 +25,8 @@ export function App() {
     "dashboard" | "transfer" | "qr" | "history" | "updates" | "settings"
   >("dashboard");
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // In-App Update States
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -274,9 +276,37 @@ export function App() {
           {activeTab === "dashboard" && (
             <div className="max-w-5xl mx-auto space-y-8">
               {/* Primary Send & Receive Buttons */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (files && files.length > 0) {
+                    const file = files[0];
+                    setActiveTransfer({
+                      fileName: file.name,
+                      progress: 0,
+                      speed: "24.6 MB/s",
+                      direction: "upload",
+                      isPaused: false,
+                    });
+                    setRecentTransfers((prev) => [
+                      {
+                        id: Date.now().toString(),
+                        name: file.name,
+                        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+                        status: "Transferring",
+                        time: "Just now",
+                      },
+                      ...prev,
+                    ]);
+                  }
+                }}
+              />
               <div className="grid grid-cols-2 gap-6">
                 <button
-                  onClick={() => setActiveTab("transfer")}
+                  onClick={() => fileInputRef.current?.click()}
                   className="group relative p-6 bg-[#12121A] hover:bg-[#181822] border-2 border-[#FF633844] hover:border-[#FF6338] rounded-2xl flex flex-col justify-between h-48 transition-all shadow-[0_0_30px_rgba(255,99,56,0.1)] hover:shadow-[0_0_35px_rgba(255,99,56,0.3)] text-left"
                 >
                   <div className="w-12 h-12 rounded-xl bg-[#FF6338] flex items-center justify-center text-black shadow-lg">
@@ -287,7 +317,7 @@ export function App() {
                       Send Files
                     </h2>
                     <p className="text-xs text-[#A1A1AA] mt-1 font-mono">
-                      Fast local Wi-Fi or secure cloud link transfer
+                      Click to choose files or drag and drop
                     </p>
                   </div>
                 </button>
