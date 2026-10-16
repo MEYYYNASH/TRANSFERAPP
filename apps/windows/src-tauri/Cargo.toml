@@ -1,6 +1,6 @@
 [package]
 name = "pixeldrop"
-version = "1.0.1"
+version = "1.0.2"
 description = "PIXELDROP - Dark Pixel Cross-Platform File Transfer"
 authors = ["PIXELDROP Team"]
 license = "MIT"
