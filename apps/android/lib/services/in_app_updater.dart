@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -25,22 +23,9 @@ class GitHubReleaseInfo {
 class InAppUpdaterService {
   static const String repoOwner = 'MEYYYNASH';
   static const String repoName = 'TRANSFERAPP';
-  static const String currentVersion = '1.0.0';
+  static const String currentVersion = '1.0.1';
 
   final Dio _dio = Dio();
-  final FlutterLocalNotificationsPlugin _notifications =
-      FlutterLocalNotificationsPlugin();
-
-  InAppUpdaterService() {
-    _initNotifications();
-  }
-
-  Future<void> _initNotifications() async {
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidSettings);
-    await _notifications.initialize(initSettings);
-  }
 
   /// 1. Check GitHub API for the latest published release
   Future<GitHubReleaseInfo?> checkForUpdate() async {
@@ -54,7 +39,7 @@ class InAppUpdaterService {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        final tagName = data['tag_name'] as String? ?? 'v1.0.0';
+        final tagName = data['tag_name'] as String? ?? 'v1.0.1';
         final latestVersion = tagName.replaceAll(RegExp(r'^v'), '');
 
         final isNewer = _isVersionHigher(latestVersion, currentVersion);
@@ -72,19 +57,13 @@ class InAppUpdaterService {
           }
         }
 
-        final release = GitHubReleaseInfo(
+        return GitHubReleaseInfo(
           version: latestVersion,
           releaseNotes: data['body'] as String? ?? 'New version available.',
           apkDownloadUrl: apkUrl,
           apkSize: apkSize,
           isNewer: isNewer,
         );
-
-        if (isNewer) {
-          await showUpdateNotification(release);
-        }
-
-        return release;
       }
     } catch (e) {
       debugPrint('Error checking GitHub updates: $e');
@@ -92,34 +71,14 @@ class InAppUpdaterService {
     return null;
   }
 
-  /// 2. Show Android Native Notification when update is available
-  Future<void> showUpdateNotification(GitHubReleaseInfo release) async {
-    const androidDetails = AndroidNotificationDetails(
-      'pixeldrop_updates',
-      'App Updates',
-      channelDescription: 'Notifications for new PIXELDROP releases',
-      importance: Importance.high,
-      priority: Priority.high,
-      icon: '@mipmap/ic_launcher',
-    );
-    const notificationDetails = NotificationDetails(android: androidDetails);
-
-    await _notifications.show(
-      1001,
-      '🚀 PIXELDROP v${release.version} Available!',
-      'Tap to download and install update directly inside app.',
-      notificationDetails,
-    );
-  }
-
-  /// 3. Download APK directly in-app and trigger installation intent
+  /// 2. Download APK directly in-app and trigger installation intent
   Future<bool> downloadAndInstallApk(
     String apkUrl,
     void Function(int received, int total) onProgress,
   ) async {
     try {
       final tempDir = await getTemporaryDirectory();
-      final savePath = '${tempDir.path}/PIXELDROP-update.apk';
+      final savePath = '${tempDir.path}/PIXELDROP.apk';
 
       final file = File(savePath);
       if (await file.exists()) {
