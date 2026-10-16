@@ -59,19 +59,21 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Frontend Dependencies
+      - name: Build Web Frontend
         working-directory: apps/windows
-        run: npm install
+        run: |
+          npm install
+          npm run build
 
-      - name: Build Tauri Windows Installer
-        working-directory: apps/windows
-        run: npx @tauri-apps/cli build --ignore-version-mismatches
+      - name: Build Windows Executable
+        working-directory: apps/windows/src-tauri
+        run: cargo build --release
 
       - name: Copy Windows Installer
         shell: bash
         run: |
           mkdir -p win-dist
-          cp apps/windows/src-tauri/target/release/bundle/nsis/*-setup.exe win-dist/PIXELDROP-Setup.exe 2>/dev/null || cp apps/windows/src-tauri/target/release/*.exe win-dist/PIXELDROP-Setup.exe 2>/dev/null || true
+          cp apps/windows/src-tauri/target/release/pixeldrop.exe win-dist/PIXELDROP-Setup.exe || cp apps/windows/src-tauri/target/release/*.exe win-dist/PIXELDROP-Setup.exe || true
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
