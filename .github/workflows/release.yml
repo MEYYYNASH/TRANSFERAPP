@@ -29,12 +29,27 @@ jobs:
           flutter-version: '3.24.x'
           channel: 'stable'
 
-      - name: Generate Project & Compile Genuine Android APK
+      - name: Build Genuine PIXELDROP Android APK
         working-directory: apps/android
         run: |
+          # 1. Backup actual PIXELDROP source code and dependencies
+          mkdir -p /tmp/backup_app
+          cp -r lib /tmp/backup_app/
+          cp pubspec.yaml /tmp/backup_app/
+
+          # 2. Generate native Android Gradle structure only
           rm -rf android
-          flutter create --org com.pixeldrop --project-name pixeldrop .
+          flutter create --platforms=android --org com.pixeldrop --project-name pixeldrop .
+
+          # 3. Restore genuine PIXELDROP lib/ and pubspec.yaml
+          rm -rf lib
+          cp -r /tmp/backup_app/lib .
+          cp /tmp/backup_app/pubspec.yaml .
+
+          # 4. Inject permissions into AndroidManifest.xml
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>' android/app/src/main/AndroidManifest.xml
+
+          # 5. Get dependencies and compile genuine APK
           flutter pub get
           flutter build apk --debug
 
@@ -131,14 +146,14 @@ jobs:
           fi
 
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          TAG="${GITHUB_REF_NAME:-v1.0.2}"
+          TAG="${GITHUB_REF_NAME:-v1.0.4}"
           VERSION="${TAG#v}"
 
           cat <<EOF > release-files/latest.json
           {
             "version": "$VERSION",
             "release_date": "$PUB_DATE",
-            "release_notes": "PIXELDROP $VERSION: Native File Picker, Live Camera QR Scanner, and Windows Installer.",
+            "release_notes": "PIXELDROP $VERSION: Genuine PIXELDROP UI with Native File Picker, Camera QR Scanner, and Dynamic Island.",
             "mandatory": false,
             "platforms": {
               "windows-x86_64": {
@@ -179,14 +194,14 @@ jobs:
             Premium Dark Pixel Cross-Platform File Transfer for **Android** and **Windows**.
             
             ### 📦 Direct Downloads:
-            - 📱 **Android APK**: [`PIXELDROP.apk`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP.apk) (Working File Picker + Live Camera QR Scanner)
+            - 📱 **Android APK**: [`PIXELDROP.apk`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP.apk) (Genuine PIXELDROP App with Dark Theme, File Picker & QR Scanner)
             - 💻 **Windows Installer**: [`PIXELDROP-Setup.exe`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PIXELDROP-Setup.exe) (Native Windows Setup)
             - 📄 **In-App Update Manifest**: [`latest.json`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/latest.json)
             
-            ### ✨ Features in this release:
-            - **Native Android File Picker**: Tap 'SEND FILES' to select photos, videos, APKs, and documents.
-            - **Live Camera QR Scanner**: Point at the Windows PC screen to pair instantly.
-            - **Dynamic Island Transfer Pill**: Real-time progress and speed indicators.
-            - **In-App Auto Update**: Installed apps detect this release and update directly inside the app without opening a browser.
+            ### ✨ Fixes in this release:
+            - **Restored Complete PIXELDROP UI**: Fixed CI build bug where `flutter create` overwrote `lib/main.dart` with the default template.
+            - **Native Android File Picker**: Tap 'SEND FILES' to pick photos, videos, files, and APKs.
+            - **Live Camera QR Scanner**: Point at PC screen to connect.
+            - **Pixel Dark Theme**: Background `#080808` and accent `#FF6338`.
           draft: false
           prerelease: false
