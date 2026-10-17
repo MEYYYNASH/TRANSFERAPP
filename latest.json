@@ -1,8 +1,8 @@
 {
-  "version": "1.0.6",
-  "release_date": "2026-10-17T00:30:00Z",
-  "release_notes": "🚀 PIXELDROP v1.0.6: Permanent Keystore Signature for Seamless In-App Updates, Working Send Files, and Live Camera QR Scanner.",
+  "version": "1.0.7",
+  "release_date": "2026-10-17T00:40:00Z",
+  "release_notes": "🚀 PIXELDROP v1.0.7: Seamless In-App Auto-Update with Permanent Signature, Native File Picker, and Live Camera QR Scanner.",
   "mandatory": false,
-  "apk_url": "https://github.com/MEYYYNASH/TRANSFERAPP/releases/download/v1.0.6/PIXELDROP.apk",
-  "windows_url": "https://github.com/MEYYYNASH/TRANSFERAPP/releases/download/v1.0.6/PIXELDROP-Setup.exe"
+  "apk_url": "https://github.com/MEYYYNASH/TRANSFERAPP/releases/download/v1.0.7/PIXELDROP.apk",
+  "windows_url": "https://github.com/MEYYYNASH/TRANSFERAPP/releases/download/v1.0.7/PIXELDROP-Setup.exe"
 }

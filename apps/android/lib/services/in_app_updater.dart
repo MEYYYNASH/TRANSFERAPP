@@ -22,7 +22,7 @@ class GitHubReleaseInfo {
 }
 
 class InAppUpdaterService {
-  static const String currentVersion = '1.0.6';
+  static const String currentVersion = '1.0.7';
 
   // Fast direct CDN endpoints without GitHub API 60 req/hr rate limits!
   static const String cdnManifestUrl =
