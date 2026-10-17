@@ -22,7 +22,7 @@ class GitHubReleaseInfo {
 }
 
 class InAppUpdaterService {
-  static const String currentVersion = '1.0.5';
+  static const String currentVersion = '1.0.6';
 
   // Fast direct CDN endpoints without GitHub API 60 req/hr rate limits!
   static const String cdnManifestUrl =
@@ -92,8 +92,13 @@ class InAppUpdaterService {
     void Function(int received, int total) onProgress,
   ) async {
     try {
-      final tempDir = await getTemporaryDirectory();
-      final savePath = '${tempDir.path}/PIXELDROP.apk';
+      Directory dir;
+      try {
+        dir = (await getExternalStorageDirectory()) ?? (await getTemporaryDirectory());
+      } catch (_) {
+        dir = await getTemporaryDirectory();
+      }
+      final savePath = '${dir.path}/PIXELDROP.apk';
 
       final file = File(savePath);
       if (await file.exists()) {
