@@ -45,21 +45,28 @@ jobs:
           cp -r /tmp/backup_app/lib .
           cp /tmp/backup_app/pubspec.yaml .
 
-          # Setup fixed permanent debug keystore to ensure identical signature on every build
+          # Setup fixed permanent debug keystore inside both android/app and ~/.android
+          cp /tmp/backup_app/debug.keystore android/app/debug.keystore
           mkdir -p ~/.android
           cp /tmp/backup_app/debug.keystore ~/.android/debug.keystore
+
+          # Explicitly inject signingConfigs before buildTypes in build.gradle
+          sed -i '/buildTypes {/i \    signingConfigs {\n        debug {\n            storeFile file("debug.keystore")\n            storePassword "android"\n            keyAlias "androiddebugkey"\n            keyPassword "android"\n        }\n    }' android/app/build.gradle
 
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>' android/app/src/main/AndroidManifest.xml
 
           flutter pub get
           flutter build apk --debug
 
+          echo "Verifying compiled APK signature:"
+          keytool -printcert -jarfile build/app/outputs/flutter-apk/app-debug.apk
+
       - name: Assemble Release Assets
         run: |
           mkdir -p release-files
           cp apps/android/build/app/outputs/flutter-apk/app-debug.apk release-files/PIXELDROP.apk
 
-          TAG="${GITHUB_REF_NAME:-v1.0.5}"
+          TAG="${GITHUB_REF_NAME:-v1.0.7}"
           VERSION="${TAG#v}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
